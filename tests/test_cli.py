@@ -2,11 +2,12 @@ import argparse
 import gzip
 import json
 import unittest
+from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from access_log_analyzer.cli import positive_integer, run
+from access_log_analyzer.cli import iso_datetime, positive_integer, run
 
 
 class CliTests(unittest.TestCase):
@@ -16,6 +17,14 @@ class CliTests(unittest.TestCase):
             positive_integer("0")
         with self.assertRaises(argparse.ArgumentTypeError):
             positive_integer("not-a-number")
+
+    def test_iso_datetime_requires_timezone(self) -> None:
+        self.assertEqual(
+            iso_datetime("2026-06-01T09:00:00Z"),
+            datetime(2026, 6, 1, 9, tzinfo=timezone.utc),
+        )
+        with self.assertRaises(argparse.ArgumentTypeError):
+            iso_datetime("2026-06-01T09:00:00")
 
     def test_run_analyzes_file_and_writes_report(self) -> None:
         with TemporaryDirectory() as directory:
@@ -86,6 +95,44 @@ class CliTests(unittest.TestCase):
         self.assertEqual(
             report["top_endpoints"],
             [{"endpoint": "/products", "request_count": 2}],
+        )
+
+    def test_run_filters_requested_time_range(self) -> None:
+        lines = (
+            '203.0.113.1 - - [01/Jun/2026:08:59:59 +0000] '
+            '"GET /before HTTP/1.1" 200 100 "-" "agent"\n',
+            '203.0.113.2 - - [01/Jun/2026:09:00:00 +0000] '
+            '"GET /inside HTTP/1.1" 200 100 "-" "agent"\n',
+            '203.0.113.3 - - [01/Jun/2026:10:00:00 +0000] '
+            '"GET /after HTTP/1.1" 200 100 "-" "agent"\n',
+        )
+        with TemporaryDirectory() as directory:
+            log_path = Path(directory) / "sample.log"
+            log_path.write_text("".join(lines), encoding="utf-8")
+            stdout = StringIO()
+
+            exit_code = run(
+                [
+                    str(log_path),
+                    "--format",
+                    "json",
+                    "--since",
+                    "2026-06-01T09:00:00Z",
+                    "--until",
+                    "2026-06-01T10:00:00Z",
+                ],
+                stdout=stdout,
+                stderr=StringIO(),
+            )
+
+        report = json.loads(stdout.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(report["valid_requests"], 3)
+        self.assertEqual(report["filtered_requests"], 2)
+        self.assertEqual(report["analyzed_requests"], 1)
+        self.assertEqual(
+            report["top_endpoints"],
+            [{"endpoint": "/inside", "request_count": 1}],
         )
 
     def test_run_reports_unreadable_file(self) -> None:

@@ -2,7 +2,7 @@ import unittest
 from collections.abc import Iterator
 from datetime import datetime, timezone
 
-from access_log_analyzer.analyzer import LogAnalyzer
+from access_log_analyzer.analyzer import LogAnalyzer, TimeRange
 from access_log_analyzer.models import EndpointTraffic, HourlyTraffic
 
 
@@ -130,6 +130,63 @@ class LogAnalyzerTests(unittest.TestCase):
         self.assertEqual(result.error_rate_percent, 0.0)
         self.assertEqual(result.endpoint_traffic, ())
         self.assertEqual(result.hourly_traffic, ())
+
+    def test_analyze_filters_with_inclusive_start_and_exclusive_end(self) -> None:
+        lines = (
+            make_log_line(
+                "203.0.113.1",
+                "01/Jun/2026:08:59:59 +0000",
+                "GET /before HTTP/1.1",
+                500,
+            ),
+            make_log_line(
+                "203.0.113.2",
+                "01/Jun/2026:09:00:00 +0000",
+                "GET /included HTTP/1.1",
+                200,
+            ),
+            make_log_line(
+                "203.0.113.3",
+                "01/Jun/2026:09:59:59 +0000",
+                "GET /included HTTP/1.1",
+                404,
+            ),
+            make_log_line(
+                "203.0.113.4",
+                "01/Jun/2026:10:00:00 +0000",
+                "GET /after HTTP/1.1",
+                500,
+            ),
+            "malformed line",
+        )
+        time_range = TimeRange(
+            since=datetime(2026, 6, 1, 9, tzinfo=timezone.utc),
+            until=datetime(2026, 6, 1, 10, tzinfo=timezone.utc),
+        )
+
+        result = LogAnalyzer(time_range=time_range).analyze(lines)
+
+        self.assertEqual(result.processed_lines, 5)
+        self.assertEqual(result.valid_requests, 4)
+        self.assertEqual(result.filtered_requests, 2)
+        self.assertEqual(result.analyzed_requests, 2)
+        self.assertEqual(result.malformed_lines, 1)
+        self.assertEqual(result.unique_ip_count, 2)
+        self.assertEqual(result.error_requests, 1)
+        self.assertEqual(result.error_rate_percent, 50.0)
+        self.assertEqual(
+            result.endpoint_traffic,
+            (EndpointTraffic(endpoint="/included", request_count=2),),
+        )
+
+    def test_time_range_requires_ordered_timezone_aware_boundaries(self) -> None:
+        with self.assertRaises(ValueError):
+            TimeRange(since=datetime(2026, 6, 1, 9))
+        with self.assertRaises(ValueError):
+            TimeRange(
+                since=datetime(2026, 6, 1, 10, tzinfo=timezone.utc),
+                until=datetime(2026, 6, 1, 9, tzinfo=timezone.utc),
+            )
 
     def test_top_endpoints_returns_requested_number(self) -> None:
         lines = (
