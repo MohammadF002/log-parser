@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Protocol
 from urllib.parse import urlsplit
 
+from .detectors import LoginFailureDetector
 from .models import AnalysisResult, EndpointTraffic, HourlyTraffic
 from .parser import CombinedLogParser, ParseResult
 
@@ -42,9 +43,13 @@ class LogAnalyzer:
         self,
         parser: LineParser | None = None,
         time_range: TimeRange | None = None,
+        login_failure_threshold: int = 20,
     ) -> None:
+        if login_failure_threshold < 1:
+            raise ValueError("login failure threshold must be at least one")
         self._parser = parser if parser is not None else CombinedLogParser()
         self._time_range = time_range if time_range is not None else TimeRange()
+        self._login_failure_threshold = login_failure_threshold
 
     def analyze(self, lines: Iterable[str]) -> AnalysisResult:
         processed_lines = 0
@@ -55,6 +60,9 @@ class LogAnalyzer:
         unique_ips: set[str] = set()
         endpoint_counts: Counter[str] = Counter()
         hourly_counts: Counter[datetime] = Counter()
+        login_failure_detector = LoginFailureDetector(
+            threshold=self._login_failure_threshold
+        )
 
         for line in lines:
             processed_lines += 1
@@ -72,6 +80,7 @@ class LogAnalyzer:
                 filtered_requests += 1
                 continue
 
+            login_failure_detector.observe(record)
             unique_ips.add(record.client_ip)
             endpoint_counts[self._endpoint_from(record.request_target)] += 1
 
@@ -106,6 +115,7 @@ class LogAnalyzer:
             endpoint_traffic=endpoint_traffic,
             hourly_traffic=hourly_traffic,
             filtered_requests=filtered_requests,
+            suspicious_login_activity=login_failure_detector.findings(),
         )
 
     @staticmethod
