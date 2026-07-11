@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from ipaddress import ip_address
 
 from .models import AccessLogRecord
@@ -68,18 +69,17 @@ class ParseResult:
 
 class CombinedLogParser:
     def parse(self, line: str) -> ParseResult:
-        if not line or not line.rstrip("\r\n"):
+        stripped_line = line.rstrip("\r\n")
+        if not stripped_line:
             return ParseResult.failure("line is empty")
 
-        match = _LOG_LINE_PATTERN.fullmatch(line.rstrip("\r\n"))
+        match = _LOG_LINE_PATTERN.fullmatch(stripped_line)
         if match is None:
             return ParseResult.failure("line does not match Combined Log Format")
 
         fields = match.groupdict()
 
-        try:
-            ip_address(fields["client_ip"])
-        except ValueError:
+        if not self._is_valid_client_ip(fields["client_ip"]):
             return ParseResult.failure("client IP is invalid")
 
         timestamp = self._parse_timestamp(fields["timestamp"])
@@ -91,11 +91,11 @@ class CombinedLogParser:
             return ParseResult.failure("request line must contain method, target, and protocol")
 
         method, request_target, protocol = request_parts
-        if _HTTP_METHOD_PATTERN.fullmatch(method) is None:
+        if not self._is_valid_http_method(method):
             return ParseResult.failure("HTTP method is invalid")
         if not request_target:
             return ParseResult.failure("request target is empty")
-        if _HTTP_PROTOCOL_PATTERN.fullmatch(protocol) is None:
+        if not self._is_valid_http_protocol(protocol):
             return ParseResult.failure("HTTP protocol is invalid")
 
         status_code = int(fields["status_code"])
@@ -119,6 +119,26 @@ class CombinedLogParser:
         return ParseResult.success(record)
 
     @staticmethod
+    @lru_cache(maxsize=65_536)
+    def _is_valid_client_ip(value: str) -> bool:
+        try:
+            ip_address(value)
+        except ValueError:
+            return False
+        return True
+
+    @staticmethod
+    @lru_cache(maxsize=128)
+    def _is_valid_http_method(value: str) -> bool:
+        return _HTTP_METHOD_PATTERN.fullmatch(value) is not None
+
+    @staticmethod
+    @lru_cache(maxsize=128)
+    def _is_valid_http_protocol(value: str) -> bool:
+        return _HTTP_PROTOCOL_PATTERN.fullmatch(value) is not None
+
+    @staticmethod
+    @lru_cache(maxsize=65_536)
     def _parse_timestamp(value: str) -> datetime | None:
         match = _TIMESTAMP_PATTERN.fullmatch(value)
         if match is None:
@@ -152,5 +172,6 @@ class CombinedLogParser:
             return None
 
     @staticmethod
+    @lru_cache(maxsize=4_096)
     def _unescape_quoted_field(value: str) -> str:
         return value.replace('\\"', '"').replace("\\\\", "\\")

@@ -2,6 +2,7 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Protocol
 from urllib.parse import urlsplit
 
@@ -122,6 +123,7 @@ class LogAnalyzer:
         )
 
     @staticmethod
+    @lru_cache(maxsize=65_536)
     def _endpoint_from(request_target: str) -> str:
         parsed_target = urlsplit(request_target)
         if parsed_target.scheme and parsed_target.netloc:
