@@ -34,6 +34,29 @@ class SuspiciousLoginActivity:
 
 
 @dataclass(frozen=True, slots=True)
+class ServerErrorIncident:
+    start: datetime
+    end: datetime
+    request_count: int
+    server_error_count: int
+    peak_error_rate_percent: float
+
+    @property
+    def error_rate_percent(self) -> float:
+        if self.request_count == 0:
+            return 0.0
+        return self.server_error_count / self.request_count * 100
+
+
+@dataclass(frozen=True, slots=True)
+class ServerErrorSpikeAnalysis:
+    bucket_minutes: int
+    baseline_error_rate_percent: float
+    threshold_error_rate_percent: float
+    incidents: tuple[ServerErrorIncident, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class AnalysisResult:
     processed_lines: int
     valid_requests: int
@@ -44,6 +67,7 @@ class AnalysisResult:
     hourly_traffic: tuple[HourlyTraffic, ...]
     filtered_requests: int = 0
     suspicious_login_activity: tuple[SuspiciousLoginActivity, ...] = ()
+    server_error_spike_analysis: ServerErrorSpikeAnalysis | None = None
 
     def __post_init__(self) -> None:
         if self.processed_lines != self.valid_requests + self.malformed_lines:

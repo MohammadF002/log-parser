@@ -7,6 +7,8 @@ from access_log_analyzer.models import (
     AnalysisResult,
     EndpointTraffic,
     HourlyTraffic,
+    ServerErrorIncident,
+    ServerErrorSpikeAnalysis,
     SuspiciousLoginActivity,
 )
 from access_log_analyzer.report import JsonReportFormatter, TextReportFormatter
@@ -40,6 +42,20 @@ class TextReportFormatterTests(unittest.TestCase):
                     failure_count=25,
                 ),
             ),
+            server_error_spike_analysis=ServerErrorSpikeAnalysis(
+                bucket_minutes=1,
+                baseline_error_rate_percent=1.0,
+                threshold_error_rate_percent=10.0,
+                incidents=(
+                    ServerErrorIncident(
+                        start=datetime(2026, 6, 1, 9, tzinfo=timezone.utc),
+                        end=datetime(2026, 6, 1, 9, 2, tzinfo=timezone.utc),
+                        request_count=200,
+                        server_error_count=80,
+                        peak_error_rate_percent=45.0,
+                    ),
+                ),
+            ),
         )
 
         report = TextReportFormatter(histogram_width=6).format(
@@ -60,6 +76,8 @@ class TextReportFormatterTests(unittest.TestCase):
         self.assertIn("######", report)
         self.assertIn("Suspicious Login Activity", report)
         self.assertIn("203.0.113.9", report)
+        self.assertIn("5xx Spike Detection", report)
+        self.assertIn("40.00%", report)
 
     def test_format_handles_empty_analysis(self) -> None:
         result = AnalysisResult(
@@ -100,6 +118,20 @@ class JsonReportFormatterTests(unittest.TestCase):
                     request_count=4,
                 ),
             ),
+            server_error_spike_analysis=ServerErrorSpikeAnalysis(
+                bucket_minutes=1,
+                baseline_error_rate_percent=1.0,
+                threshold_error_rate_percent=10.0,
+                incidents=(
+                    ServerErrorIncident(
+                        start=datetime(2026, 6, 1, 9, tzinfo=timezone.utc),
+                        end=datetime(2026, 6, 1, 9, 1, tzinfo=timezone.utc),
+                        request_count=100,
+                        server_error_count=25,
+                        peak_error_rate_percent=25.0,
+                    ),
+                ),
+            ),
         )
 
         output = JsonReportFormatter(top_count=1).format(
@@ -121,3 +153,7 @@ class JsonReportFormatterTests(unittest.TestCase):
             report["hourly_traffic"],
             [{"hour": "2026-06-01T09:00:00+00:00", "request_count": 4}],
         )
+        spike_analysis = report["server_error_spike_analysis"]
+        self.assertEqual(spike_analysis["baseline_error_rate_percent"], 1.0)
+        self.assertEqual(spike_analysis["threshold_error_rate_percent"], 10.0)
+        self.assertEqual(spike_analysis["incidents"][0]["server_error_count"], 25)

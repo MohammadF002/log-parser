@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Protocol
 from urllib.parse import urlsplit
 
-from .detectors import LoginFailureDetector
+from .detectors import LoginFailureDetector, ServerErrorSpikeDetector
 from .models import AnalysisResult, EndpointTraffic, HourlyTraffic
 from .parser import CombinedLogParser, ParseResult
 
@@ -63,6 +63,7 @@ class LogAnalyzer:
         login_failure_detector = LoginFailureDetector(
             threshold=self._login_failure_threshold
         )
+        server_error_spike_detector = ServerErrorSpikeDetector()
 
         for line in lines:
             processed_lines += 1
@@ -81,6 +82,7 @@ class LogAnalyzer:
                 continue
 
             login_failure_detector.observe(record)
+            server_error_spike_detector.observe(record)
             unique_ips.add(record.client_ip)
             endpoint_counts[self._endpoint_from(record.request_target)] += 1
 
@@ -116,6 +118,7 @@ class LogAnalyzer:
             hourly_traffic=hourly_traffic,
             filtered_requests=filtered_requests,
             suspicious_login_activity=login_failure_detector.findings(),
+            server_error_spike_analysis=server_error_spike_detector.analyze(),
         )
 
     @staticmethod
