@@ -27,6 +27,7 @@ class TextReportFormatter:
             self._format_top_endpoints(result),
             self._format_hourly_traffic(result),
             self._format_suspicious_logins(result),
+            self._format_server_error_spikes(result),
         )
         return "\n\n".join(sections)
 
@@ -98,6 +99,40 @@ class TextReportFormatter:
         )
         return "\n".join(rows)
 
+    @staticmethod
+    def _format_server_error_spikes(result: AnalysisResult) -> str:
+        heading = "5xx Spike Detection"
+        analysis = result.server_error_spike_analysis
+        if analysis is None:
+            return f"{heading}\n{'-' * len(heading)}\n(not available)"
+
+        rows = [
+            heading,
+            "-" * len(heading),
+            f"Baseline rate:  {analysis.baseline_error_rate_percent:.2f}%",
+            f"Spike threshold: {analysis.threshold_error_rate_percent:.2f}%",
+        ]
+        if not analysis.incidents:
+            rows.append("(none detected)")
+            return "\n".join(rows)
+
+        rows.extend(
+            (
+                "Start                      End                        "
+                "Requests       5xx   Rate   Peak",
+                *(
+                    f"{incident.start.isoformat():<26} "
+                    f"{incident.end.isoformat():<26} "
+                    f"{incident.request_count:>8,} "
+                    f"{incident.server_error_count:>9,} "
+                    f"{incident.error_rate_percent:>6.2f}% "
+                    f"{incident.peak_error_rate_percent:>6.2f}%"
+                    for incident in analysis.incidents
+                ),
+            )
+        )
+        return "\n".join(rows)
+
 
 class JsonReportFormatter:
     def __init__(self, top_count: int = 10) -> None:
@@ -146,5 +181,28 @@ class JsonReportFormatter:
                 }
                 for item in result.suspicious_login_activity
             ],
+            "server_error_spike_analysis": self._server_error_spike_analysis(result),
         }
         return json.dumps(report, indent=2)
+
+    @staticmethod
+    def _server_error_spike_analysis(result: AnalysisResult) -> dict | None:
+        analysis = result.server_error_spike_analysis
+        if analysis is None:
+            return None
+        return {
+            "bucket_minutes": analysis.bucket_minutes,
+            "baseline_error_rate_percent": analysis.baseline_error_rate_percent,
+            "threshold_error_rate_percent": analysis.threshold_error_rate_percent,
+            "incidents": [
+                {
+                    "start": incident.start.isoformat(),
+                    "end": incident.end.isoformat(),
+                    "request_count": incident.request_count,
+                    "server_error_count": incident.server_error_count,
+                    "error_rate_percent": incident.error_rate_percent,
+                    "peak_error_rate_percent": incident.peak_error_rate_percent,
+                }
+                for incident in analysis.incidents
+            ],
+        }
