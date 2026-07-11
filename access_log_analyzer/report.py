@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from .models import AnalysisResult
@@ -80,3 +81,45 @@ class TextReportFormatter:
                 f"{'#' * bar_length}"
             )
         return "\n".join(rows)
+
+
+class JsonReportFormatter:
+    def __init__(self, top_count: int = 10) -> None:
+        if top_count < 1:
+            raise ValueError("top endpoint count must be at least one")
+        self._top_count = top_count
+
+    def format(
+        self,
+        result: AnalysisResult,
+        source_path: Path,
+        elapsed_seconds: float,
+    ) -> str:
+        if elapsed_seconds < 0:
+            raise ValueError("elapsed time cannot be negative")
+
+        report = {
+            "source": str(source_path),
+            "processed_lines": result.processed_lines,
+            "valid_requests": result.valid_requests,
+            "malformed_lines": result.malformed_lines,
+            "unique_client_ips": result.unique_ip_count,
+            "error_requests": result.error_requests,
+            "error_rate_percent": result.error_rate_percent,
+            "elapsed_seconds": elapsed_seconds,
+            "top_endpoints": [
+                {
+                    "endpoint": item.endpoint,
+                    "request_count": item.request_count,
+                }
+                for item in result.top_endpoints(self._top_count)
+            ],
+            "hourly_traffic": [
+                {
+                    "hour": item.hour.isoformat(),
+                    "request_count": item.request_count,
+                }
+                for item in result.hourly_traffic
+            ],
+        }
+        return json.dumps(report, indent=2)

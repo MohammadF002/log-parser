@@ -7,7 +7,17 @@ from typing import TextIO
 
 from .analyzer import LogAnalyzer
 from .readers import open_log_file
-from .report import TextReportFormatter
+from .report import JsonReportFormatter, TextReportFormatter
+
+
+def positive_integer(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be an integer") from error
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be at least one")
+    return number
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -19,6 +29,20 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "log_file",
         type=Path,
         help="path to the access log file",
+    )
+    parser.add_argument(
+        "--top",
+        type=positive_integer,
+        default=10,
+        metavar="N",
+        help="number of top endpoints to report (default: 10)",
+    )
+    parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        dest="output_format",
+        help="report output format (default: text)",
     )
     return parser
 
@@ -46,7 +70,12 @@ def run(
         return 1
 
     elapsed_seconds = perf_counter() - started_at
-    report = TextReportFormatter().format(
+    if options.output_format == "json":
+        formatter = JsonReportFormatter(top_count=options.top)
+    else:
+        formatter = TextReportFormatter(top_count=options.top)
+
+    report = formatter.format(
         result=result,
         source_path=options.log_file,
         elapsed_seconds=elapsed_seconds,
