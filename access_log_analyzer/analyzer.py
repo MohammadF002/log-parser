@@ -1,5 +1,6 @@
 from collections import Counter
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
 from urllib.parse import urlsplit
@@ -13,14 +14,43 @@ class LineParser(Protocol):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class TimeRange:
+    since: datetime | None = None
+    until: datetime | None = None
+
+    def __post_init__(self) -> None:
+        for name, boundary in (("since", self.since), ("until", self.until)):
+            if boundary is not None and boundary.utcoffset() is None:
+                raise ValueError(f"{name} must include a timezone offset")
+        if self.since is not None and self.until is not None:
+            if self.since > self.until:
+                raise ValueError("since must not be later than until")
+
+    def contains(self, timestamp: datetime) -> bool:
+        if timestamp.utcoffset() is None:
+            raise ValueError("record timestamp must include a timezone offset")
+        if self.since is not None and timestamp < self.since:
+            return False
+        if self.until is not None and timestamp >= self.until:
+            return False
+        return True
+
+
 class LogAnalyzer:
-    def __init__(self, parser: LineParser | None = None) -> None:
+    def __init__(
+        self,
+        parser: LineParser | None = None,
+        time_range: TimeRange | None = None,
+    ) -> None:
         self._parser = parser if parser is not None else CombinedLogParser()
+        self._time_range = time_range if time_range is not None else TimeRange()
 
     def analyze(self, lines: Iterable[str]) -> AnalysisResult:
         processed_lines = 0
         valid_requests = 0
         malformed_lines = 0
+        filtered_requests = 0
         error_requests = 0
         unique_ips: set[str] = set()
         endpoint_counts: Counter[str] = Counter()
@@ -38,6 +68,10 @@ class LogAnalyzer:
                 raise RuntimeError("successful parse result does not contain a record")
 
             valid_requests += 1
+            if not self._time_range.contains(record.timestamp):
+                filtered_requests += 1
+                continue
+
             unique_ips.add(record.client_ip)
             endpoint_counts[self._endpoint_from(record.request_target)] += 1
 
@@ -71,6 +105,7 @@ class LogAnalyzer:
             error_requests=error_requests,
             endpoint_traffic=endpoint_traffic,
             hourly_traffic=hourly_traffic,
+            filtered_requests=filtered_requests,
         )
 
     @staticmethod
