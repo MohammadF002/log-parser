@@ -1,13 +1,22 @@
+import argparse
 import gzip
+import json
 import unittest
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from access_log_analyzer.cli import run
+from access_log_analyzer.cli import positive_integer, run
 
 
 class CliTests(unittest.TestCase):
+    def test_positive_integer_rejects_invalid_values(self) -> None:
+        self.assertEqual(positive_integer("3"), 3)
+        with self.assertRaises(argparse.ArgumentTypeError):
+            positive_integer("0")
+        with self.assertRaises(argparse.ArgumentTypeError):
+            positive_integer("not-a-number")
+
     def test_run_analyzes_file_and_writes_report(self) -> None:
         with TemporaryDirectory() as directory:
             log_path = Path(directory) / "sample.log"
@@ -49,6 +58,35 @@ class CliTests(unittest.TestCase):
         self.assertEqual(stderr.getvalue(), "")
         self.assertIn("Valid requests:     1", stdout.getvalue())
         self.assertIn("/health", stdout.getvalue())
+
+    def test_run_supports_json_output_and_top_limit(self) -> None:
+        lines = (
+            '203.0.113.1 - - [01/Jun/2026:09:00:00 +0000] '
+            '"GET /products HTTP/1.1" 200 100 "-" "agent"\n',
+            '203.0.113.2 - - [01/Jun/2026:09:00:01 +0000] '
+            '"GET /login HTTP/1.1" 401 100 "-" "agent"\n',
+            '203.0.113.3 - - [01/Jun/2026:09:00:02 +0000] '
+            '"GET /products HTTP/1.1" 200 100 "-" "agent"\n',
+        )
+        with TemporaryDirectory() as directory:
+            log_path = Path(directory) / "sample.log"
+            log_path.write_text("".join(lines), encoding="utf-8")
+            stdout = StringIO()
+            stderr = StringIO()
+
+            exit_code = run(
+                [str(log_path), "--format", "json", "--top", "1"],
+                stdout=stdout,
+                stderr=stderr,
+            )
+
+        report = json.loads(stdout.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertEqual(
+            report["top_endpoints"],
+            [{"endpoint": "/products", "request_count": 2}],
+        )
 
     def test_run_reports_unreadable_file(self) -> None:
         stdout = StringIO()
