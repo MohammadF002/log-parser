@@ -7,6 +7,7 @@ from access_log_analyzer.models import (
     AnalysisResult,
     EndpointTraffic,
     HourlyTraffic,
+    SuspiciousLoginActivity,
 )
 from access_log_analyzer.report import JsonReportFormatter, TextReportFormatter
 
@@ -33,6 +34,12 @@ class TextReportFormatterTests(unittest.TestCase):
                     request_count=3,
                 ),
             ),
+            suspicious_login_activity=(
+                SuspiciousLoginActivity(
+                    client_ip="203.0.113.9",
+                    failure_count=25,
+                ),
+            ),
         )
 
         report = TextReportFormatter(histogram_width=6).format(
@@ -51,6 +58,8 @@ class TextReportFormatterTests(unittest.TestCase):
         self.assertIn("Hourly Traffic (UTC)", report)
         self.assertIn("2026-06-01T10:00:00+00:00", report)
         self.assertIn("######", report)
+        self.assertIn("Suspicious Login Activity", report)
+        self.assertIn("203.0.113.9", report)
 
     def test_format_handles_empty_analysis(self) -> None:
         result = AnalysisResult(

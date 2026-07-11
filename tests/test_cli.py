@@ -135,6 +135,35 @@ class CliTests(unittest.TestCase):
             [{"endpoint": "/inside", "request_count": 1}],
         )
 
+    def test_run_reports_suspicious_login_activity(self) -> None:
+        line = (
+            '203.0.113.9 - - [01/Jun/2026:09:00:00 +0000] '
+            '"POST /login HTTP/1.1" 401 100 "-" "agent"\n'
+        )
+        with TemporaryDirectory() as directory:
+            log_path = Path(directory) / "sample.log"
+            log_path.write_text(line * 2, encoding="utf-8")
+            stdout = StringIO()
+
+            exit_code = run(
+                [
+                    str(log_path),
+                    "--format",
+                    "json",
+                    "--login-failure-threshold",
+                    "2",
+                ],
+                stdout=stdout,
+                stderr=StringIO(),
+            )
+
+        report = json.loads(stdout.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            report["suspicious_login_activity"],
+            [{"client_ip": "203.0.113.9", "failure_count": 2}],
+        )
+
     def test_run_reports_unreadable_file(self) -> None:
         stdout = StringIO()
         stderr = StringIO()

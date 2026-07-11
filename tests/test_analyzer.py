@@ -188,6 +188,28 @@ class LogAnalyzerTests(unittest.TestCase):
                 until=datetime(2026, 6, 1, 9, tzinfo=timezone.utc),
             )
 
+    def test_analyze_detects_suspicious_login_failures(self) -> None:
+        lines = (
+            make_log_line(
+                "203.0.113.9",
+                "01/Jun/2026:09:00:00 +0000",
+                "POST /login HTTP/1.1",
+                401,
+            ),
+            make_log_line(
+                "203.0.113.9",
+                "01/Jun/2026:09:00:01 +0000",
+                "POST /login HTTP/1.1",
+                401,
+            ),
+        )
+
+        result = LogAnalyzer(login_failure_threshold=2).analyze(lines)
+
+        self.assertEqual(len(result.suspicious_login_activity), 1)
+        self.assertEqual(result.suspicious_login_activity[0].client_ip, "203.0.113.9")
+        self.assertEqual(result.suspicious_login_activity[0].failure_count, 2)
+
     def test_top_endpoints_returns_requested_number(self) -> None:
         lines = (
             make_log_line(

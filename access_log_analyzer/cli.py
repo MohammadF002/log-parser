@@ -66,6 +66,13 @@ def create_argument_parser() -> argparse.ArgumentParser:
         type=iso_datetime,
         help="include records before this ISO-8601 datetime",
     )
+    parser.add_argument(
+        "--login-failure-threshold",
+        type=positive_integer,
+        default=20,
+        metavar="N",
+        help="flag IPs with at least N /login 401 responses (default: 20)",
+    )
     return parser
 
 
@@ -87,7 +94,10 @@ def run(
     started_at = perf_counter()
     try:
         with open_log_file(options.log_file) as lines:
-            result = LogAnalyzer(time_range=time_range).analyze(lines)
+            result = LogAnalyzer(
+                time_range=time_range,
+                login_failure_threshold=options.login_failure_threshold,
+            ).analyze(lines)
     except OSError as error:
         reason = error.strerror or str(error)
         print(

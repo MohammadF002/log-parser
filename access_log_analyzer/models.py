@@ -28,6 +28,12 @@ class HourlyTraffic:
 
 
 @dataclass(frozen=True, slots=True)
+class SuspiciousLoginActivity:
+    client_ip: str
+    failure_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class AnalysisResult:
     processed_lines: int
     valid_requests: int
@@ -37,6 +43,7 @@ class AnalysisResult:
     endpoint_traffic: tuple[EndpointTraffic, ...]
     hourly_traffic: tuple[HourlyTraffic, ...]
     filtered_requests: int = 0
+    suspicious_login_activity: tuple[SuspiciousLoginActivity, ...] = ()
 
     def __post_init__(self) -> None:
         if self.processed_lines != self.valid_requests + self.malformed_lines:

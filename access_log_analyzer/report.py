@@ -26,6 +26,7 @@ class TextReportFormatter:
             self._format_summary(result, source_path, elapsed_seconds),
             self._format_top_endpoints(result),
             self._format_hourly_traffic(result),
+            self._format_suspicious_logins(result),
         )
         return "\n\n".join(sections)
 
@@ -84,6 +85,19 @@ class TextReportFormatter:
             )
         return "\n".join(rows)
 
+    @staticmethod
+    def _format_suspicious_logins(result: AnalysisResult) -> str:
+        heading = "Suspicious Login Activity"
+        if not result.suspicious_login_activity:
+            return f"{heading}\n{'-' * len(heading)}\n(none detected)"
+
+        rows = [heading, "-" * len(heading), "401 Responses  Client IP"]
+        rows.extend(
+            f"{item.failure_count:>13,}  {item.client_ip}"
+            for item in result.suspicious_login_activity
+        )
+        return "\n".join(rows)
+
 
 class JsonReportFormatter:
     def __init__(self, top_count: int = 10) -> None:
@@ -124,6 +138,13 @@ class JsonReportFormatter:
                     "request_count": item.request_count,
                 }
                 for item in result.hourly_traffic
+            ],
+            "suspicious_login_activity": [
+                {
+                    "client_ip": item.client_ip,
+                    "failure_count": item.failure_count,
+                }
+                for item in result.suspicious_login_activity
             ],
         }
         return json.dumps(report, indent=2)
