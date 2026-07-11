@@ -1,3 +1,4 @@
+import gzip
 import unittest
 from io import StringIO
 from pathlib import Path
@@ -30,6 +31,24 @@ class CliTests(unittest.TestCase):
         self.assertIn("Processed lines:    2", stdout.getvalue())
         self.assertIn("Valid requests:     1", stdout.getvalue())
         self.assertIn("Malformed lines:    1", stdout.getvalue())
+
+    def test_run_analyzes_gzip_file(self) -> None:
+        log_line = (
+            '203.0.113.1 - - [01/Jun/2026:09:00:00 +0000] '
+            '"GET /health HTTP/1.1" 200 100 "-" "agent"\n'
+        )
+        with TemporaryDirectory() as directory:
+            log_path = Path(directory) / "sample.log.gz"
+            log_path.write_bytes(gzip.compress(log_line.encode("utf-8")))
+            stdout = StringIO()
+            stderr = StringIO()
+
+            exit_code = run([str(log_path)], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertIn("Valid requests:     1", stdout.getvalue())
+        self.assertIn("/health", stdout.getvalue())
 
     def test_run_reports_unreadable_file(self) -> None:
         stdout = StringIO()
